@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"github.com/pkg/errors"
 
 	cmn "github.com/tendermint/tendermint/libs/common"
 
@@ -65,12 +66,12 @@ func TxSearch(ctx *rpctypes.Context, query string, prove bool, page, perPage int
 		return nil, err
 	}
 
-	results, err := txIndexer.Search(q)
+	hashes, err := txIndexer.Search(q)
 	if err != nil {
 		return nil, err
 	}
 
-	totalCount := len(results)
+	totalCount := len(hashes)
 	perPage = validatePerPage(perPage)
 	page, err = validatePage(page, perPage, totalCount)
 	if err != nil {
@@ -82,7 +83,11 @@ func TxSearch(ctx *rpctypes.Context, query string, prove bool, page, perPage int
 	var proof types.TxProof
 	// if there's no tx in the results array, we don't need to loop through the apiResults array
 	for i := 0; i < len(apiResults); i++ {
-		r := results[skipCount+i]
+		h := hashes[skipCount+i]
+		r, err := txIndexer.Get(h.Hash)
+		if err != nil {
+			return nil, errors.Wrapf(err, "failed to get Tx{%X}", h)
+		}
 		height := r.Height
 		index := r.Index
 
