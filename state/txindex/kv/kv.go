@@ -163,7 +163,7 @@ func (txi *TxIndex) indexEvents(result *types.TxResult, hash []byte, store dbm.S
 // result for it (2) for range queries it is better for the client to provide
 // both lower and upper bounds, so we are not performing a full scan. Results
 // from querying indexes are then intersected and returned to the caller.
-func (txi *TxIndex) Search(q *query.Query) ([]*types.TxResult, error) {
+func (txi *TxIndex) Search(q *query.Query) ([]txindex.IndexedHash, error) {
 	var hashesInitialized bool
 	filteredHashes := make(map[string][]byte)
 
@@ -178,15 +178,8 @@ func (txi *TxIndex) Search(q *query.Query) ([]*types.TxResult, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "error during searching for a hash in the query")
 	} else if ok {
-		res, err := txi.Get(hash)
-		switch {
-		case err != nil:
-			return []*types.TxResult{}, errors.Wrap(err, "error while retrieving the result")
-		case res == nil:
-			return []*types.TxResult{}, nil
-		default:
-			return []*types.TxResult{res}, nil
-		}
+		txHash := txindex.IndexedHash{Hash: hash}
+		return []txindex.IndexedHash{txHash}, errors.Wrap(err, "error while retrieving the result")
 	}
 
 	// conditions to skip because they're handled before "everything else"
@@ -238,24 +231,17 @@ func (txi *TxIndex) Search(q *query.Query) ([]*types.TxResult, error) {
 		}
 	}
 
-	results := make([]*types.TxResult, 0, len(filteredHashes))
-	for _, h := range filteredHashes {
-		res, err := txi.Get(h)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get Tx{%X}", h)
-		}
-		results = append(results, res)
+	indexHashList := make([]txindex.IndexedHash, 0, len(filteredHashes))
+	for key, value := range filteredHashes {
+		indexHashList = append(indexHashList, txindex.IndexedHash{Index: key, Hash: value})
 	}
 
 	// sort by height & index by default
-	sort.Slice(results, func(i, j int) bool {
-		if results[i].Height == results[j].Height {
-			return results[i].Index < results[j].Index
-		}
-		return results[i].Height < results[j].Height
+	sort.Slice(indexHashList, func(i, j int) bool {
+		return indexHashList[i].Index < indexHashList[j].Index
 	})
 
-	return results, nil
+	return indexHashList, nil
 }
 
 func lookForHash(conditions []query.Condition) (hash []byte, err error, ok bool) {
